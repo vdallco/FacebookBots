@@ -1,2 +1,2 @@
 # FacebookBots
-Facebook bots made with Python
+Facebook bots I quickly cobbled together in python
