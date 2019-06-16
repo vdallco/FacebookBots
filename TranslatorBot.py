@@ -1,108 +1,143 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 
 # Google Translate Bot
-# Cody DallaValle
+# Cody DallaValle's code
+# Modified by Edwin 'Solly'
+# Do not change the source encoding.
 
-# Auth token from Maximum Bots - Paintmin 
+# !!! Auth token from Maximum Bots - Paintmin !!!
 # http://maxbots.ddns.net/token/
 
+# Make sure you have installed all the README.md requirements
+
+# from transliterate import translit, get_available_language_codes, detect_language
+from PIL import ImageFont, Image, ImageDraw
+import urllib.request as myurllib
+from datetime import datetime
+import googletrans
 import facebook
 import random
 import time
-import urllib
-import urllib2
-import re
-import time
-from datetime import datetime
 import json
+import html
 import sys
-from googletrans import Translator
-import googletrans
-from PIL import Image, ImageDraw, ImageFont
-from html.parser import HTMLParser
+import re
 
-authToken = 'YOUR-AUTH-TOKEN-HERE'
-pageId = 'PAGE-ID'
 
-fb = facebook.GraphAPI(access_token=authToken)
-trans = googletrans.Translator()
-quotesApi = 'http://quotesondesign.com/wp-json/posts?filter[orderby]=rand&filter[posts_per_page]=1'
 categories = ['students', 'art', 'love', 'funny', 'life', 'sports', 'management', 'inspire']
 
+
 # https://stackoverflow.com/questions/9662346/python-code-to-remove-html-tags-from-a-string
-def cleanHtml(raw_html):
-        cleanr = re.compile('<.*?>')
-        cleantext = re.sub(cleanr, '', raw_html)
-        return cleantext
+def clean_html(raw_html):
+    cleanr = re.compile('<.*?>')
+    return re.sub(cleanr, '', raw_html)
 
-def timeStamp():
-        return datetime.now().strftime('%Y.%m.%d.%H.%M.%S.%f')
 
-def txtToPng(txt):
-        img = Image.new('RGB', (800, 950), color = (42, 42, 42))
-        d = ImageDraw.Draw(img)
-        font = ImageFont.truetype('/Library/Fonts/Arial.ttf', 20)
-        d.text((15,15), txt, font=font, fill=(255,255,255))
-        fileName = timeStamp() + ".png"
-        img.save(fileName)
-        return fileName
+def fb_post(fb, p_id, img_sauce, post_txt):
+    post_img = open(img_sauce, 'rb')
+    resp = fb.put_photo(parent_object=p_id, connection_name='feed', message=post_txt, image=post_img)
+    post_id = resp['id']
+    return post_id
 
-def htmlUnescape(txtStr):
-	h = HTMLParser()
-	return h.unescape(txtStr)
 
-def fbPost(imgFile, translateTxt):
-	resp = fb.put_photo(image=open(imgFile), message=translateTxt)
-	postId = resp['id']
-	return postId
+def txt_to_png(txt):
+    img = Image.new('RGB', (1000, 900), color=(20, 20, 20))
+    d = ImageDraw.Draw(img)
+    font = ImageFont.truetype(font="segoeui.ttf", size=20, layout_engine=ImageFont.LAYOUT_RAQM)
+    d.text((15, 15), txt, font=font, fill=(255, 255, 255))
+    file_name = datetime.now().strftime('%Y.%m.%d.%H.%M.%S.%f') + ".png"
+    img.save(file_name)
+    return file_name
 
-def randomQuote():
-	src = urllib2.urlopen(quotesApi).read()
-	srcObj = json.loads(src[1:-1])
-	print srcObj
-	return cleanHtml(srcObj['content'])
 
-def randomLang():
-	langCodes = googletrans.LANGCODES
-	randLang = random.choice(langCodes.keys())
-	randLangCode = langCodes[randLang]
-	return randLangCode
-		
-def randomTranslate(txtStr):
-	destLang = randomLang()
-	translated = trans.translate(txtStr, destLang)
-	langs = googletrans.LANGCODES
-	transTxt = translated.text if not type(translated) is list else translated[0].text
-	destLangTxt = langs.keys()[langs.values().index(destLang)]
-	print "Translated into " + destLangTxt + ": " + transTxt
-	return [destLang, htmlUnescape(transTxt), destLangTxt]
-	
-def randomTranslations(seedTxt):
-	randRounds = random.randint(8, 24)
-	currentTxt = ['', htmlUnescape(seedTxt)]
-	translatorTxt = u'Starting text: ' + currentTxt[1]
-	print "Starting text: " + currentTxt[1]
-	for x in xrange(0, randRounds):
-		currentTxt = randomTranslate(currentTxt[1])
-		translatorTxt += currentTxt[2] + ": " + currentTxt[1] + '\n'
+def pick_quote(quotes_api):
+    src = myurllib.urlopen(quotes_api).read()
+    src_obj = json.loads(src[1:-1])
+    print(src_obj)
+    return clean_html(src_obj['content'])
 
-	toEnglish = trans.translate(currentTxt[1], "en")
-	currentTxt = toEnglish.text if not type(toEnglish) is list else toEnglish[0].text # if there are multiple translations, just use the first
-	print "Back to English: " + currentTxt 
-	return [htmlUnescape(seedTxt), translatorTxt, currentTxt]
 
-def postRandomTrans():
-	translate = randomTranslations(randomQuote())
-	imgFile = txtToPng(translate[1] + '\n' + translate[2])
-	fbPost(imgFile, u'𝐒𝐭𝐚𝐫𝐭𝐢𝐧𝐠 𝐭𝐞𝐱𝐭: ' + translate[0] + u'\n𝐓𝐫𝐚𝐧𝐬𝐥𝐚𝐭𝐞𝐝 𝐢𝐧𝐭𝐨: ' + translate[2])
+def rand_transl(str_sauce, trans_cli, dest_lang, langs):
 
-while True:
-	try:
-		postRandomTrans()
-		timeToWait = random.randint(6*60, 17*60)
-		print "Waiting " + str(timeToWait/60) + " minutes until the next post"
-		time.sleep(timeToWait)
-	except KeyboardInterrupt:
-		sys.exit(0)
-	except Exception as e:
-		print str(e)
+    translated = trans_cli.translate(str_sauce, dest_lang)
+    if not type(translated) is list:
+        trans_txt = translated.text
+    else:
+        trans_txt = translated[0].text
+    destlang_txt = list(langs.keys())[(list(langs.values())).index(dest_lang)]
+    print("Translated into " + destlang_txt + ": " + trans_txt)
+    return [dest_lang, trans_txt, destlang_txt]
+
+
+def transl_request(seed_txt, trans_cli):
+
+    rand_rounds = random.randint(14, 20)
+    current_txt = ['', html.unescape(seed_txt)]
+    translator_txt = u'Starting text: ' + current_txt[1]
+    print("Starting text: " + current_txt[1])
+    glangs = googletrans.LANGCODES
+    avail_langs = list(glangs.keys())
+    avail_langs.pop(avail_langs.index('Filipino'))  # Remove redundant entry in GoogleTranslate language codes list
+    previous = current_txt[1]
+    for x in range(0, rand_rounds):
+        rand_lang = random.choice(avail_langs)
+        dest_lang = glangs[rand_lang]
+        current_txt = rand_transl(previous, trans_cli, dest_lang, glangs)
+        # previous is used to put romanized text in img while showing bot_admin original output from rand_transl
+        previous = current_txt[1]
+        # if detect_language(current_txt[1]) in get_available_language_codes():
+        #     translator_txt += current_txt[2] + ": " + translit(current_txt[1], reversed=True) + '\n'
+        # else:
+        # Above transliteration function proven too time consuming to deploy.
+
+        # Planning to introduce nltk to romanize previously broken characters from unsupported languages
+        # http://www.lrec-conf.org/proceedings/lrec2010/pdf/30_Paper.pdf
+        translator_txt += current_txt[2] + ": " + current_txt[1] + '\n'
+
+        avail_langs.pop(avail_langs.index(current_txt[2]))
+
+    to_english = trans_cli.translate(current_txt[1], "en")
+    if not type(to_english) is list:
+        current_txt = to_english.text
+    else:  # if there are multiple translations, just use the first
+        current_txt = to_english[0].text
+    print("Back to English: " + current_txt)
+    return [html.unescape(seed_txt), translator_txt, current_txt]
+
+
+def post_randtransl(fb, quoapi, trns, p_id):
+
+    transl_target = ''
+    while len(transl_target) == 0 or len(transl_target) > 75:  # Limit quote len to avoid output view issues
+        transl_target = pick_quote(quoapi)
+    translate = transl_request(transl_target, trns)
+    img_file = txt_to_png(translate[1] + '\n' + translate[2])
+    txt_to_post = str(u'𝐒𝐭𝐚𝐫𝐭𝐢𝐧𝐠 𝐭𝐞𝐱𝐭: ' + translate[0] + u'\n𝐓𝐫𝐚𝐧𝐬𝐥𝐚𝐭𝐞𝐝 𝐢𝐧𝐭𝐨: ' + translate[2])
+    fb_post(fb, p_id, img_file, txt_to_post)
+
+
+def main():
+
+    # Will later introduce a standard file to load tokens directly (very simple task but oh well...)
+    my_token = 'YOUR-PAINTMIN-TOKEN-HERE'
+    page_id = 'YOUR-OWN-PAGE-ID-HERE'
+
+    fb = facebook.GraphAPI(access_token=my_token, version="3.2")
+    trans = googletrans.Translator()
+    quotes_api = 'http://quotesondesign.com/wp-json/posts?filter[orderby]=rand&filter[posts_per_page]=1'
+
+    while True:
+        try:
+            post_randtransl(fb, quotes_api, trans, page_id)
+            time_to_wait = random.randint(900, 1800)
+            print("Waiting " + str(time_to_wait / 60) + " minutes until the next post")
+            time.sleep(time_to_wait)
+        except KeyboardInterrupt:
+            sys.exit(0)
+        except Exception as e:
+            print(str(e))
+
+
+if __name__ == "__main__":
+    main()
