@@ -21,8 +21,12 @@ import sched
 from unsplash.api import Api
 from unsplash.auth import Auth
 
+### Known bugs:
+## Sometimes looping just stops working?
+## Fb graph api sometimes aborts connections, use a try/catch on every op
+
 def log(txt):
-    print(str(datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')) + ": " + msg)
+    print(str(datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')) + ": " + txt)
 
 ##### Unsplash API stuff
 
@@ -133,7 +137,21 @@ def userInit(fbUserId, name): # creares a new user record if needed and returns 
     except Error as e:
         log("Error: " + str(e))
         
+def getUserName(userId):
+    try:
+        conn = sqlCon.cursor()
+        results = conn.execute("SELECT Name FROM FBUsers fbu JOIN Users u ON u.UserId = fbu.UserId WHERE FBUserTxt = '" + fbUserId + "'")
         
+        result = conn.fetchone()
+        
+        if result is None: return "User is not yet setup. Ask them to comment !status on todays post and then retry the donation after the bot has processed their comment."
+        
+        userName = result[0]
+        
+        return userName
+        
+    except Exception as e:
+        return "Error while looking up user: " + str(e)
 
 def addComment(commentId, userId, msg, created): 
     conn = sqlCon.cursor()
@@ -181,7 +199,7 @@ def giveUserCash(userId, cashToGive):
     
     result, dbUserId = results[0], results[1]
     
-    if result is None:
+    if results is None or result is None:
         return False # user account net yet setup? Might want to log this
     
     execSQL(sqlCon, "UPDATE Users SET Cash = " + str(result + cashToGive) + " WHERE UserId = " + str(dbUserId) )
@@ -258,6 +276,7 @@ The market is now open! See the list of possible actions below:
 !sell [quantity] [symbol]
 !status
 !price [symbol]
+!donate [userId] [cash]
 """
 
 tryAgainMsgs = ["Please try again..", "Invalid command", "Does not compute!", "Try again with this format: !sell 400 APPL", "*90's dial-up sounds*"]
@@ -371,6 +390,19 @@ def userSell(userId, symbol, quantity, userName):
     
     return "𝗦𝘁𝗼𝗰𝗸 𝘀𝗼𝗹𝗱!\n\n\n𝘙𝘦𝘤𝘦𝘪𝘱𝘵: You sold " + str(quantity) + "x " + symbol + " for $" + str(cashify(salePrice)) + "! ($" + str(cashify(sharePrice)) + " per share)\n\n𝙔𝙤𝙪𝙧 𝙘𝙖𝙨𝙝 (before): $" + str(cashify(usersCash)) + "\n𝙔𝙤𝙪𝙧 𝙘𝙖𝙨𝙝 (after sale): $" + str(cashify(userCash(userId, userName))) + "\n\n" + "Total stock in " + symbol + ": $" + str(cashify(int(usersShares) * sharePrice)) + " (" + str(usersShares) + " shares)"
     
+def userDonate(fromUserId, toUserId, cash, fromUserName):
+    fromUsersCash = userCash(fromUserId, userName)
+    
+    if cash > fromUsersCash: return "You don't have that much money!"
+    
+    if cash < 1: return "Nice try"
+    
+    toUserName = getUserName(toUserId)
+    toUserCash = userCash(toUserId, toUserName)
+    
+    takeUserCash(fromUserId, cash)
+    giveUserCash(toUserId, cash)
+
 def sanitizeUserInput(q): # sanitizes user input before being used in database queries. Very important to avoid SQL injection
     # stock symbols and quantities will never need to include characters like ,;'"()_=-~ etc. Only allow alpha numberic characters
     
@@ -381,7 +413,6 @@ def sanitizeUserInput(q): # sanitizes user input before being used in database q
             q = q.replace(char, '')
     
     return q
-
 
 def processComments(): # called every few mins, calls getComments on todays Market Open Post and then does some SQL stuff
     # calculate todays Market Open Post, if none exists, create one
@@ -402,7 +433,7 @@ def processComments(): # called every few mins, calls getComments on todays Mark
                 
                 log("Checking what to do with message from " + fromName + ", msg: " + msg)
                 
-                msg = sanitizeUserInput(msg.lower())
+                msg = sanitizeUserInput(msg.lower()).strip()
                 if msg.startswith("!me") or msg.startswith("!status") or msg.startswith("/me") or msg.startswith("/status"):
                     #log("Making comment with status of user...")
                     makeComment(parentCommentId, getUserInfo(fromId, fromName))

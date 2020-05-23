@@ -4,18 +4,23 @@
 # Auth token from Maximum Bots - Paintmin 
 # http://maxbots.ddns.net/token/
 
+# Known issues:
+
+# Infinite loop has caused KYM to IP block me more than once... (I think fixed, now)
+# memes logged in files when never actually posted
+
 import facebook
 import random
 import time
 import urllib
-import urllib2
+from urllib.request import urlopen
 import re
 import time
 import json
 import sys
 
-authToken = 'YOUR-AUTH-TOKEN-HERE'
-pageId = 'PAGE-ID'
+authToken = 'YOUR_AUTH_TOKEN_HERE'
+pageId = 'YOUR_PAGE_ID'
 
 fb = facebook.GraphAPI(access_token=authToken)
 kymUrl = 'https://knowyourmeme.com/random'
@@ -41,8 +46,8 @@ def timeStamp():
 def createAlbum(nameStr, descStr):
 	path = pageId + "/albums"
 	postArgs = {'access_token': authToken, 'name': nameStr, 'message': descStr}
-	postData  = urllib.urlencode(postArgs)
-	response = urllib2.urlopen("https://graph.facebook.com/" + pageId + "/albums?" , postData).read()
+	postData  = urllib.parse.urlencode(postArgs).encode("utf-8")
+	response = urlopen("https://graph.facebook.com/" + pageId + "/albums?" , postData).read().decode('utf-8')
 	id = json.loads(response)
 	return id['id']
 
@@ -70,7 +75,7 @@ def getPics(srcStr, imgCount):
 	returnList = []
 
 	photosUrl = srcStr.split(urlSrc)[1].split('\'')[0] + '/photos'
-	srcStr = urllib2.urlopen(photosUrl).read()
+	srcStr = urlopen(photosUrl).read().decode('utf-8')
 
 	loop = True
 	x = 0
@@ -84,44 +89,59 @@ def getPics(srcStr, imgCount):
 			loop = False # this is dumb, why not just count the number of eligible images first and then iterate. But it works
 	return returnList
 
+def rndSleep():
+		timeSleep = random.randint(7*60, 400*60)
+		timeSleepMins = timeSleep / 60
+		print("Sleeping for " + str(timeSleepMins) + " minutes...")
+		time.sleep(timeSleep)
+
 def getMeme():
 	desc = ''
 	kymSrc = ''
 	title = ''
 
 	try:
-		kymSrc = urllib2.urlopen(kymUrl).read()
+		kymSrc = urlopen(kymUrl).read().decode('utf-8')
+		print("Got KYM source...")
 	except Exception as e:
-		print str(e)
+		print("Error while getting KYM source..." + str(e))
 		return 0
 
 	try:
-		title = cleanHtml(kymSrc.split(titleSrc)[1].split('\' />')[0])
+		rawTitle = kymSrc.split(titleSrc)[1].split('\' />')[0]
+		print('Raw title: ' + rawTitle)
+		title = cleanHtml(rawTitle)
 	except Exception as e:
-		print str(e)
+		print("Error while parsing title..." + str(e))
 		return 0
 	
 	try:
 		views = kymSrc.split(viewSrc)[1].split(' ')[0]
 		picCount = kymSrc.split(picSrc)[1].split(' ')[0]
 		
-		print title
-		print views
-		print picCount
+		print(title)
+		print(views)
+		print(picCount)
 		
 		if not title or not views or not picCount:
-			print "Not sure what happened here"
+			print("Couldn't parse views, pic counts, or views...")
+			rndSleep()
+			getMeme()
 		elif not logMeme(title): # already posted
+			print("Already posted...")
+			rndSleep()
 			getMeme()
 		elif picCount == "0":
-			getMeme()	
+			print("No pictures...")
+			rndSleep()
+			getMeme()
 		elif deadMeme in kymSrc:
 			desc = '[DATA EXPUNGED]'
 		
 			imgs = getPics(kymSrc, picCount)
 			newAlbum = createAlbum(title, desc)
 			pagePost(desc, imgs, newAlbum)
-			print desc
+			print(desc)
 		else:
 			aboutTxt = (kymSrc.split(aboutSrc)[1].split('<h')[0] if aboutSrc in kymSrc else '')
 			originTxt = (kymSrc.split(originSrc)[1].split('<h')[0] if originSrc in kymSrc else '')
@@ -129,21 +149,28 @@ def getMeme():
 			backgroundTxt = (kymSrc.split(backgroundSrc)[1].split('<h')[0] if backgroundSrc in kymSrc else '') 
 			historyTxt = (kymSrc.split(historySrc)[1].split('<h')[0] if historySrc in kymSrc else '') 
 			spreadTxt = (kymSrc.split(spreadSrc)[1].split('<h')[0] if spreadSrc in kymSrc else '') 
+			print("Finding image urls")
 			imgs = getPics(kymSrc, picCount)
+			print(imgs)
 			desc = cleanHtml(aboutTxt + '\n' + originTxt + '\n' + overviewTxt + '\n' + backgroundTxt + '\n' + historyTxt + '\n' + spreadTxt)
+			print("Making album...")
 			newAlbum = createAlbum(title, desc)
+			print("Posting to Facebook with album ID  " + str(newAlbum) + "...")
 			pagePost(desc, imgs, newAlbum)
-			print cleanHtml(aboutTxt + '\n' + originTxt + '\n' + overviewTxt + '\n' + backgroundTxt + '\n' + historyTxt + '\n' + spreadTxt)
-	except:
-		print "Logging error for " + errorRef + " at " + timeStamp()
+			print("Posted to Facebook...")
+			print(cleanHtml(aboutTxt + '\n' + originTxt + '\n' + overviewTxt + '\n' + backgroundTxt + '\n' + historyTxt + '\n' + spreadTxt))
+	except Exception as e:
+		print(str(e))
+		print("Logging error for " + title + " at " + timeStamp())
 		logError(title)
 
 while True:
 	try:
 		getMeme()
-		time.sleep(random.randint(7*60, 15*60))
+		rndSleep()
 	except KeyboardInterrupt:
 		sys.exit(0)
 	except:
-		print "Unhandled exception at " + timeStamp()
+		print("Unhandled exception at " + timeStamp())
+		rndSleep()
 
